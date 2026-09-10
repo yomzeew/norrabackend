@@ -3,6 +3,8 @@
 Multi-tenant WhatsApp AI receptionist backend. Handles Embedded Signup connections,
 webhook message handling, and per-business WhatsApp credentials.
 
+Stack: Express + Prisma + PostgreSQL.
+
 ## Setup
 
 1. Install dependencies:
@@ -14,64 +16,72 @@ webhook message handling, and per-business WhatsApp credentials.
    ```
    cp .env.example .env
    ```
-   - `META_APP_ID` / `META_APP_SECRET` — from developers.facebook.com/apps/ → your app → App Settings > Basic
+   - `META_APP_ID` / `META_APP_SECRET` — developers.facebook.com/apps/ → your app → App Settings > Basic
    - `TOKEN_ENCRYPTION_KEY` — generate with:
      ```
      node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
      ```
-   - `DATABASE_URL` — your local or hosted Postgres connection string
+   - `DATABASE_URL` — your Postgres connection string
 
-3. Create the database (if it doesn't exist yet), then run the schema:
+3. Create the database, then run the first migration:
    ```
    createdb norra
-   npm run migrate
+   npx prisma migrate dev --name init
    ```
+   This generates the Prisma client and applies the schema.
 
 4. Start the server:
    ```
    npm run dev
    ```
-   This runs on `http://localhost:3000` by default. `/health` should return `{ ok: true }`.
+   `/health` should return `{ ok: true }`.
+
+## Useful commands
+
+```
+npm run prisma:studio     # browse/edit data in a GUI
+npm run prisma:migrate    # create + apply a new migration after schema changes
+npm run prisma:generate   # regenerate the client without migrating
+npm run prisma:deploy     # apply existing migrations (use in production)
+```
 
 ## Exposing your webhook locally
 
-Meta needs an HTTPS URL it can reach, so for local development use a tunnel, e.g.:
+Meta needs an HTTPS URL it can reach, so use a tunnel for local development:
 ```
 ngrok http 3000
 ```
 Then in App Dashboard > WhatsApp > Configuration, set:
-- Callback URL: `https://<your-ngrok-subdomain>.ngrok-free.app/webhooks/whatsapp`
-- Verify Token: any string — but note this project generates a **per-business**
-  `webhook_verify_token` stored in the database rather than a single global one.
-  For your first manual test account, you can temporarily hardcode a token to match
-  what you enter in the Meta dashboard, or insert a row into `whatsapp_accounts` by
-  hand with that same token before testing the handshake.
+- Callback URL: `https://<your-subdomain>.ngrok-free.app/webhooks/whatsapp`
+- Verify Token: this project stores a **per-business** `webhookVerifyToken` in the
+  database rather than one global value. For your first manual test, create a
+  business + whatsappAccount row (via `prisma studio`) with a known token, and enter
+  that same token in the Meta dashboard.
 
 ## Project structure
 
 ```
 norra-backend/
-├── server.js              # entry point
-├── db/
-│   ├── schema.sql          # Postgres schema
-│   ├── migrate.js          # applies schema.sql
-│   ├── pool.js              # pg connection pool
-│   └── index.js             # query helpers (businesses, whatsappAccounts, etc.)
+├── server.js                   # entry point
+├── prisma/
+│   └── schema.prisma            # data model — source of truth for the DB
+├── lib/
+│   └── prisma.js                # PrismaClient singleton
 ├── routes/
-│   ├── whatsapp.js          # POST /api/whatsapp/connect — Embedded Signup code exchange
-│   └── webhooks.js          # GET/POST /webhooks/whatsapp — verification + inbound messages
+│   ├── whatsapp.js              # POST /api/whatsapp/connect — Embedded Signup code exchange
+│   └── webhooks.js              # GET/POST /webhooks/whatsapp — verification + inbound messages
 └── utils/
-    ├── crypto.js             # AES-256-GCM encrypt/decrypt for access tokens
+    ├── crypto.js                 # AES-256-GCM encrypt/decrypt for access tokens
     ├── sendWhatsAppMessage.js
-    └── generateAiReply.js    # placeholder — replace with a real model call
+    └── generateAiReply.js        # placeholder — replace with a real model call
 ```
 
 ## Next steps
 
-- Replace `utils/generateAiReply.js` with a real call to your model of choice.
-- Add authentication to `/api/whatsapp/connect` so only a logged-in business owner
-  can trigger a connection for their own `businessId`.
-- Add a background job that periodically calls Graph API's `debug_token` per
-  connected account and flips `token_status` to `expired` proactively.
-- Build the React frontend's "Connect WhatsApp" button (see project chat history).
-# norrabackend
+- Replace `utils/generateAiReply.js` with a real model call.
+- Add auth to `/api/whatsapp/connect` so only a signed-in owner can connect their own
+  `businessId` — right now anyone with a valid UUID could trigger a connection.
+- Add a background job calling Graph API `debug_token` per account, flipping
+  `tokenStatus` to `expired` before a send fails.
+- Build the React "Connect WhatsApp" button against `config_id` from
+  Facebook Login for Business.

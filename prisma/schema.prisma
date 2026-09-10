@@ -1,0 +1,99 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Business {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String
+  slug      String   @unique
+  timezone  String   @default("Europe/London")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt DateTime @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  whatsappAccounts WhatsappAccount[]
+  services         Service[]
+  businessHours    BusinessHours[]
+  conversations    Conversation[]
+
+  @@map("businesses")
+}
+
+model WhatsappAccount {
+  id                    String    @id @default(uuid()) @db.Uuid
+  businessId            String    @map("business_id") @db.Uuid
+  wabaId                String    @map("waba_id")
+  phoneNumberId         String    @unique @map("phone_number_id")
+  displayPhoneNumber    String?   @map("display_phone_number")
+  accessTokenCiphertext Bytes     @map("access_token_ciphertext")
+  tokenStatus           String    @default("active") @map("token_status")
+  webhookVerifyToken    String    @map("webhook_verify_token")
+  connectedAt           DateTime  @default(now()) @map("connected_at") @db.Timestamptz(6)
+  lastVerifiedAt        DateTime? @map("last_verified_at") @db.Timestamptz(6)
+  createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt             DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId])
+  @@map("whatsapp_accounts")
+}
+
+model Service {
+  id           String  @id @default(uuid()) @db.Uuid
+  businessId   String  @map("business_id") @db.Uuid
+  name         String
+  pricePence   Int     @map("price_pence")
+  durationMins Int?    @map("duration_mins")
+  active       Boolean @default(true)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("services")
+}
+
+model BusinessHours {
+  id         String    @id @default(uuid()) @db.Uuid
+  businessId String    @map("business_id") @db.Uuid
+  dayOfWeek  Int       @map("day_of_week") @db.SmallInt
+  opensAt    DateTime? @map("opens_at") @db.Time(6)
+  closesAt   DateTime? @map("closes_at") @db.Time(6)
+  closed     Boolean   @default(false)
+
+  business Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@map("business_hours")
+}
+
+model Conversation {
+  id            String    @id @default(uuid()) @db.Uuid
+  businessId    String    @map("business_id") @db.Uuid
+  customerWaId  String    @map("customer_wa_id")
+  status        String    @default("open")
+  lastMessageAt DateTime? @map("last_message_at") @db.Timestamptz(6)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  business Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  messages Message[]
+
+  @@unique([businessId, customerWaId])
+  @@map("conversations")
+}
+
+model Message {
+  id             String   @id @default(uuid()) @db.Uuid
+  conversationId String   @map("conversation_id") @db.Uuid
+  direction      String
+  waMessageId    String?  @unique @map("wa_message_id")
+  body           String?
+  aiGenerated    Boolean  @default(false) @map("ai_generated")
+  createdAt      DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  conversation Conversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@map("messages")
+}
